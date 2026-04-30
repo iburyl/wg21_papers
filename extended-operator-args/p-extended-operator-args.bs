@@ -1,0 +1,111 @@
+<pre class='metadata'>
+Title: Extending operator overloads with trailing defaulted arguments
+Shortname: p-extended-operator-args
+Revision: 0
+Status: DRAFT
+Group: wg21
+Audience: LEWG, EWG
+Editor: (Editor TBD)
+Markup Shorthands: markdown yes
+Abstract: This paper proposes allowing user-defined operator functions to declare additional trailing parameters with default arguments (beyond the operand arity fixed today), evaluated at the call site—mirroring the existing exception for `operator()`. The motivating use case is passing `std::source_location` into operators so implementations and diagnostics can record where `a @ b` was written without macros or non-operator wrappers.
+</pre>
+
+Introduction {#intro}
+============
+
+Many libraries implement smart reference types, units, matrices, or logging proxies where user-defined operators (`+`, `==`, subscripting, etc.) are the natural surface syntax. Authors often want **call-site provenance**: file, line, and column where the operator expression appeared. C++20 provides <a href="https://wg21.link/source.location.syn">`std::source_location`</a> for that purpose on ordinary functions, but **operator invocations** cannot today carry a trailing `std::source_location` parameter in a portable way while preserving `a + b` syntax.
+
+Problem {#problem}
+=========
+
+For a non-operator function, the idiom is well supported:
+
+```cpp
+void f(std::source_location loc = std::source_location::current());
+```
+
+For `operator+`, the standard restricts which declarations are valid operator functions and historically disallows default arguments on most operators’ parameters, with a known carve-out for `operator()` (see \[dcl.fct.default] and \[over.oper] in the working draft—exact wording should be cited from the editor’s draft used for this revision).
+
+As a result, authors resort to:
+
+* Macros that expand to a hidden extra argument (fragile, non-`constexpr`-friendly, poor for tooling).
+* Named functions (`add(a, b)`) instead of operators (ergonomic loss).
+* Thread-local or global “last site” state (incorrect under concurrency and inlining).
+
+None of these match the clarity of defaulted parameters evaluated at the **actual** operator call site.
+
+Motivating example {#example}
+==================
+
+```cpp
+struct quantity {
+  double value;
+  friend constexpr quantity
+  operator+(quantity a, quantity b,
+             std::source_location where = std::source_location::current());
+};
+
+// Desired: `where` refers to the line containing the `+`, not the callee’s definition line.
+quantity x = a + b;
+```
+
+The same pattern applies to `operator==` for assertion helpers, `operator[]` for bounds-checked access with provenance, and other operators where diagnostics or telemetry should cite user source.
+
+Goals {#goals}
+=======
+
+* Preserve existing **operator syntax** (`@`, `a[b]`, etc.) and overload resolution behavior for code that does not use trailing defaulted parameters.
+* Ensure defaulted trailing arguments are **evaluated at the call site** when the operator is invoked with operator syntax, consistent with \[expr.call] default argument semantics.
+* Avoid ABI surprises where possible: extra parameters are typically passed like ordinary trailing parameters when the definition uses them (implementation strategy remains an LEWG/EWG detail).
+
+Non-goals {#nongoals}
+=========
+
+* Changing arity for **built-in** operators.
+* Allowing callers to pass extra arguments through `a + b` syntax (only implementation-injected defaults are in scope unless LEWG prefers explicit opt-in).
+* Specifying a particular mangling; that is for the ABI groups and implementations once the language rule is clear.
+
+Proposed direction {#proposal}
+==================
+
+**Informal intent:** Treat user-defined operators like ordinary functions for **trailing parameters with default arguments**, subject to:
+
+1. The leading parameters still satisfy the operator’s required operand pattern (unary, binary, etc.) as today.
+2. Additional parameters, if any, appear **only after** the operand parameters and **all** have default arguments.
+3. Default argument instantiation occurs in the context of the **operator expression**, so `std::source_location::current()` and similar capture the caller.
+
+**Wording strategy (sketch):** Amend \[dcl.fct.default] / \[over.oper] so that the prohibition on default arguments applies only to parameters that correspond to operands **or** is removed for trailing parameters that do not correspond to an operand position, with notes tying default argument instantiation to the operator’s lexical invocation site.
+
+Open design questions {#questions}
+=====================
+
+1. **Which operators?** Unary and binary member and non-member operators are the highest value; `operator new`/`delete`, conversion functions, and comparison operators may need special cases (e.g., `= default` comparisons).
+2. **Interaction with `= default`:** Defaulted comparisons and other special forms must remain ill-formed if extra defaulted parameters would change ABI or semantics ambiguously.
+3. **`operator[]` C++23 multi-arg form:** Ensure consistency with the static `operator[]` arity rules.
+4. **Overload resolution:** Confirm that candidates with extra trailing defaulted parameters remain viable when only operand arguments are provided, and that tie-breakers do not change in surprising ways.
+5. **Educational/compiler diagnostics:** Should ill-formed uses (e.g., default on a non-trailing “operand” parameter) produce the same errors as today?
+
+Alternatives considered {#alternics}
+=======================
+
+| Approach | Drawback |
+|----------|----------|
+| Macros | Leaks into user code; hurts tooling and `constexpr`. |
+| Named APIs | Loses operator notation. |
+| Compiler magic (`[[clang::...]]`) | Non-portable. |
+| Reflection (future) | Does not solve today’s diagnostics in a simple, zero-runtime way. |
+
+Implementation notes {#impl}
+======================
+
+Implementations already handle default arguments and source locations for ordinary calls; extending that path to rewritten operator calls is plausibly localized in the frontend. An implementation report is encouraged once direction stabilizes.
+
+Acknowledgments {#ack}
+===============
+
+Thanks to WG21 contributors who have discussed operator default arguments on the reflectors; this paper collects a narrow use case around provenance.
+
+Wording {#wording}
+=======
+
+No formal drafting is included in **R0**; R0 is intended to establish motivation and design direction. A future revision should carry full `…` edits against the working draft.
