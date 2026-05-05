@@ -260,7 +260,7 @@ Some frightening operators, which do not have specific sections for overloaded o
 Wording {#wording}
 =======
 
-It looks sufficient to address 3 aspects:
+It looks sufficient to address the following aspects:
 1. Remove phrasing the explicitely disallows to have argument with default values for operators.
 2. Modify phrasing, that Unary operato definition may imply additional arguments, if they have default values.
 3. Same for binary operators.
