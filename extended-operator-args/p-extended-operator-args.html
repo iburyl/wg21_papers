@@ -2139,28 +2139,29 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
    <p>This paper proposes allowing user-defined operator functions to declare additional trailing parameters with
 default arguments (beyond the fixed number of operands today), evaluated at the call site—mirroring the existing
 exception for <code class="highlight"><c- k>operator</c-><c- p>()</c-></code>. The motivating use case is passing <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>source_location</c-></code> into operators so
-implementations and diagnostics can record where <code class="highlight"><c- n>a</c-> @ <c- n>b</c-></code> was written without macros or non-operator wrappers.</p>
+implementations and diagnostics can record where <code class="highlight"><c- n>a</c-> @ <c- n>b</c-></code> was written without non-operator wrappers.</p>
   </div>
   <nav data-fill-with="table-of-contents" id="toc">
    <h2 class="no-num no-ref no-toc" id="contents">Table of Contents</h2>
    <ol class="toc">
     <li><a href="#intro"><span class="secno">1</span> <span class="content">Introduction</span></a>
     <li><a href="#problem"><span class="secno">2</span> <span class="content">Problem</span></a>
-    <li><a href="#example"><span class="secno">3</span> <span class="content">Motivating example</span></a>
-    <li><a href="#proposal"><span class="secno">4</span> <span class="content">Proposed direction</span></a>
-    <li><a href="#alternics"><span class="secno">5</span> <span class="content">Alternatives considered</span></a>
-    <li><a href="#wording_strategy"><span class="secno">6</span> <span class="content">Wording strategy</span></a>
-    <li><a href="#wording_summary"><span class="secno">7</span> <span class="content">Wording summary</span></a>
-    <li><a href="#impl"><span class="secno">8</span> <span class="content">Implementation notes</span></a>
-    <li><a href="#wording"><span class="secno">9</span> <span class="content">Wording</span></a>
+    <li><a href="#proposal"><span class="secno">3</span> <span class="content">Proposed direction</span></a>
+    <li><a href="#alternics"><span class="secno">4</span> <span class="content">Alternatives considered</span></a>
+    <li><a href="#wording_strategy"><span class="secno">5</span> <span class="content">Wording strategy</span></a>
+    <li><a href="#wording"><span class="secno">6</span> <span class="content">Wording</span></a>
+    <li><a href="#impl"><span class="secno">7</span> <span class="content">Implementation notes</span></a>
    </ol>
   </nav>
   <main>
    <h2 class="heading settled" data-level="1" id="intro"><span class="secno">1. </span><span class="content">Introduction</span><a class="self-link" href="#intro"></a></h2>
    <p>Many libraries implement smart reference types, units, matrices, or logging proxies where user-defined operators (<code class="highlight"><c- o>+</c-></code>,
-<code class="highlight"><c- o>==</c-></code>, subscripting, etc.) are the natural surface syntax. Authors often want <strong>call-site provenance</strong>: file, line, and
-column where the operator expression appeared. C++20 provides <a href="https://wg21.link/source.location.syn"><code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>source_location</c-></code></a> for that purpose on ordinary functions, but
-<strong>operator invocations</strong> cannot today carry a trailing <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>source_location</c-></code> parameter in a portable way while
+<code class="highlight"><c- o>==</c-></code>, subscripting, etc.) are the natural surface syntax. Such interfaces are primarily used, where operations are
+heavily used across the source code, thus using named functions would result in excessive verbosty in reduction
+of code readability. Within such use cases code monitoring and additional debugging capabilities are essential.</p>
+   <p>Authors often want <strong>call-site provenance</strong>: file, line, and column where the operator expression appeared.</p>
+   <p>C++20 provides <a href="https://wg21.link/source.location.syn"><code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>source_location</c-></code></a> for that purpose on ordinary functions,
+but operator invocations cannot carry a trailing <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>source_location</c-></code> parameter today in a portable way while
 preserving <code class="highlight"><c- n>a</c-> <c- o>+</c-> <c- n>b</c-></code> syntax.</p>
    <h2 class="heading settled" data-level="2" id="problem"><span class="secno">2. </span><span class="content">Problem</span><a class="self-link" href="#problem"></a></h2>
    <p>For a non-operator function, the idiom is well supported:</p>
@@ -2172,11 +2173,10 @@ preserving <code class="highlight"><c- n>a</c-> <c- o>+</c-> <c- n>b</c-></code>
 have more or fewer parameters than the number required for the corresponding operator, as described in the rest of
 [over.oper].</p>
    </blockquote>
-   <p>That rule—not <a href="https://eel.is/c++draft/dcl.fct.default">[dcl.fct.default]</a>, which only defines how default
-arguments behave when they are allowed—is what forbids the usual <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>source_location</c-><c- o>::</c-><c- n>current</c-><c- p>()</c-></code> trailing-parameter
+   <p>That rule dissallows the usual <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>source_location</c-><c- o>::</c-><c- n>current</c-><c- p>()</c-></code> trailing-parameter
 idiom on overloads such as <code class="highlight"><c- k>operator</c-><c- o>+</c-></code>, aside from carve-outs spelled out “below” in <a href="https://eel.is/c++draft/over.oper">[over.oper]</a> (notably <code class="highlight"><c- k>operator</c-><c- p>()</c-></code>).</p>
    <p>As a result, authors resort to named functions (<code class="highlight"><c- n>add</c-><c- p>(</c-><c- n>a</c-><c- p>,</c-> <c- n>b</c-><c- p>)</c-></code>) instead of operators (ergonomic loss).</p>
-   <h2 class="heading settled" data-level="3" id="example"><span class="secno">3. </span><span class="content">Motivating example</span><a class="self-link" href="#example"></a></h2>
+   <p>Example:</p>
 <pre class="highlight language-cpp"><c- k>struct</c-> <c- nc>quantity</c-> <c- p>{</c->
   <c- b>int</c-> <c- n>value</c-><c- p>;</c->
   <c- k>friend</c-> <c- k>constexpr</c-> <c- n>quantity</c->
@@ -2186,10 +2186,14 @@ idiom on overloads such as <code class="highlight"><c- k>operator</c-><c- o>+</c
 
 <c- n>quantity</c-> <c- n>x</c-> <c- o>=</c-> <c- n>a</c-> <c- o>+</c-> <c- n>b</c-><c- p>;</c->
 </pre>
+   <p>Using std::source_location within the operator itself will provide the source data of the operator implementation,
+which is generally obvious and does not bring in new data (and could be workaround by good old #FILE and #LINE
+macro definitions). Thus allowing std::source_location within the default value of the argument is
+essential for the monitoring methodology to work.</p>
    <p>We may collect usage statistics, based on caller context. E.g. reporting wrap-around
 cases, as potential for usage error. But it is almost useless, unless we have data about the context
 in which it happens.</p>
-   <h2 class="heading settled" data-level="4" id="proposal"><span class="secno">4. </span><span class="content">Proposed direction</span><a class="self-link" href="#proposal"></a></h2>
+   <h2 class="heading settled" data-level="3" id="proposal"><span class="secno">3. </span><span class="content">Proposed direction</span><a class="self-link" href="#proposal"></a></h2>
    <p>The intent of the change is to treat user-defined operators like ordinary functions for <strong>trailing parameters with default
 arguments</strong>, subject to:</p>
    <ol>
@@ -2200,9 +2204,9 @@ arguments</strong>, subject to:</p>
     <li data-md>
      <p>Instantiate defaults in the <strong>operator expression</strong>, so <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>source_location</c-><c- o>::</c-><c- n>current</c-><c- p>()</c-></code> captures the caller.</p>
    </ol>
-   <p class="note" role="note"><span class="marker">Note:</span> one can go further and allow any additional arguments to operators even if they are not defaulted, if one is to call them with
-<code class="highlight"><c- n>a</c-><c- p>.</c-><c- k>operator</c-><c- o>+</c-><c- p>(</c-><c- mi>1</c-><c- p>,</c-><c- mi>2</c-><c- p>,</c-><c- mi>3</c-><c- p>)</c-></code> syntax, but there is no clear use case for this wider generalization.</p>
-   <h2 class="heading settled" data-level="5" id="alternics"><span class="secno">5. </span><span class="content">Alternatives considered</span><a class="self-link" href="#alternics"></a></h2>
+   <p class="note" role="note"><span class="marker">Note:</span> the language could also allow extra operator parameters without defaults, callable only through explicit
+<code class="highlight"><c- n>a</c-><c- p>.</c-><c- k>operator</c-><c- o>+</c-><c- p>(</c-><c- mi>1</c-><c- p>,</c-> <c- mi>2</c-><c- p>,</c-> <c- mi>3</c-><c- p>)</c-></code> syntax, but there is no clear use case for that broader generalization.</p>
+   <h2 class="heading settled" data-level="4" id="alternics"><span class="secno">4. </span><span class="content">Alternatives considered</span><a class="self-link" href="#alternics"></a></h2>
    <table>
     <thead>
      <tr>
@@ -2214,32 +2218,35 @@ arguments</strong>, subject to:</p>
       <td>Loses operator notation.
      <tr>
       <td>std::stacktrace
-      <td>Brings in a variety of requirements such as RTTI information and is generally much heavier, than using std::source_location
+      <td>Brings in a variety of requirements (for example RTTI) and is generally much heavier than
+        <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>source_location</c-></code>, as well as reporting granularity is implementation defined,
+        thus we may not see the exact place of operator invocation.
      <tr>
       <td>Compiler built-in
-      <td>Executing any kind of builtin within the context of the operator looses the caller context thus does not look like solution.
+      <td>Running a built-in inside the operator body loses caller-site context and does not
+        provide a satisfactory solution.
      <tr>
       <td>Reflection
-      <td>Does not seem to solve the question of the callee context.
+      <td>Does not appear to recover caller-site context for this problem.
    </table>
-   <h2 class="heading settled" data-level="6" id="wording_strategy"><span class="secno">6. </span><span class="content">Wording strategy</span><a class="self-link" href="#wording_strategy"></a></h2>
-   <p>There are several operator types and serveral sections of the  standard, which describe how overload resolution works
-for operators, and thus can potentially be affected by adding new arguments.</p>
-   <p>General section <a href="https://eel.is/c++draft/over.oper.general">[over.oper.general]</a> for overloaded operators.</p>
-   <p>The key wording, which forbidds default arguments:</p>
+   <h2 class="heading settled" data-level="5" id="wording_strategy"><span class="secno">5. </span><span class="content">Wording strategy</span><a class="self-link" href="#wording_strategy"></a></h2>
+   <p>There are several operator kinds and several sections of the standard that describe how overload resolution works for
+operators; those places could be affected by adding new parameters.</p>
+   <p>The general section for overloaded operators is <a href="https://eel.is/c++draft/over.oper.general">[over.oper.general]</a>.</p>
+   <p>The key wording that forbids default arguments is:</p>
    <p><cite>"An operator function cannot have default arguments, except where explicitly stated below. Operator functions cannot
 have more or fewer parameters than the number required for the corresponding operator, as described in the rest of [over.oper]."</cite></p>
-   <p>Further description is split into several sub-sections and the most generic are: Unary operators
-<a href="https://eel.is/c++draft/over.unary">[over.unary]</a> and Binary opertors
+   <p>Further rules are split across subclauses; the most general are unary operators
+<a href="https://eel.is/c++draft/over.unary">[over.unary]</a> and binary operators
 <a href="https://eel.is/c++draft/over.binary.general">[over.binary.general]</a>.
-Currently they are explicitely distinguished by the number of arguments in their member and non-member versions.</p>
-   <p>When type of the operator is determined, it is further reffered to the Operators in expressions section
-<a href="https://eel.is/c++draft/over.match.oper">[over.match.oper]</a>, which has several aspects:</p>
+Today they are distinguished explicitly by the number of parameters in their member and non-member forms.</p>
+   <p>Once the operator’s kind is fixed, resolution is described under <a href="https://eel.is/c++draft/over.match.oper">[over.match.oper]</a>,
+which has several parts:</p>
    <ul>
     <li data-md>
-     <p>the algorithm of populating of the candidate lists - should not be affected by proposed change;</p>
+     <p>the algorithm for populating the candidate sets should not be affected by the proposed change;</p>
     <li data-md>
-     <p>the algorithm of choosing between the candidates is reffered to general function rules [over.match.viable] and [over.match.best] - should not be affected by proposed change.</p>
+     <p>choosing among candidates defers to the usual function rules (<a href="https://eel.is/c++draft/over.match.viable">[over.match.viable]</a>, <a href="https://eel.is/c++draft/over.match.best">[over.match.best]</a>) and should likewise be unaffected.</p>
    </ul>
    <p>This is followed by a set of dedicated sections:</p>
    <table>
@@ -2251,28 +2258,28 @@ Currently they are explicitely distinguished by the number of arguments in their
      <tr>
       <td>Unary operators<br>
       <a href="https://eel.is/c++draft/over.unary">[over.unary]</a>
-      <td>Introduces definition:<br>
+      <td>Introduces the definition:<br>
       "either a non-static member function ([class.mfct]) with no non-object parameters or a non-member function with one parameter."<br><br>
-      Distinguishing between unary and binary operators, where both are possible:<br> + - * &amp;
+      Distinguishing unary and binary forms where both exist, for example <code class="highlight"><c- o>+</c-></code>, <code class="highlight"><c- o>-</c-></code>, <code class="highlight"><c- o>*</c-></code>,
+      and <code class="highlight"><c- o>&amp;</c-></code>.
      <tr>
       <td>General binary operators<br>
       <a href="https://eel.is/c++draft/over.binary.general">[over.binary.general]</a>
-      <td>Introduces definition:<br>
-      "either a non-static member function ([class.mfct]) with one non-object parameter or a non-member function with two parameters"<br>
-      same
+      <td>Introduces the definition:<br>
+      "either a non-static member function ([class.mfct]) with one non-object parameter or a non-member function with two parameters."
      <tr>
       <td>Simple assignment<br>
       <a href="https://eel.is/c++draft/over.assign">[over.assign]</a>
-      <td>Reffers to previous section (General binary operators) for describing the argument list and their behavior.
+      <td>Refers to the previous section (general binary operators) for the parameter list and its behavior.
      <tr>
       <td>Function call operator<br>
       <a href="https://eel.is/c++draft/over.call">[over.call]</a>
-      <td>Is already explicitely allowed to have default arguments:<br>
+      <td>Is already explicitly allowed to have default arguments:<br>
       <cite>"with an arbitrary number of parameters. It may have default arguments."</cite>
      <tr>
       <td>Subscripting operator<br>
       <a href="https://eel.is/c++draft/over.sub">[over.sub]</a>
-      <td>Is already explicitely allowed to have default arguments:<br>
+      <td>Is already explicitly allowed to have default arguments:<br>
       <cite>"with an arbitrary number of parameters. It may have default arguments."</cite>
       
      <tr>
@@ -2282,8 +2289,8 @@ Currently they are explicitely distinguished by the number of arguments in their
      <tr>
       <td>Increment and decrement<br>
       <a href="https://eel.is/c++draft/over.inc">[over.inc]</a>
-      <td>Explicitely distinguishes cases with no non-object arguments and non-object arguments with additional argument of type int.
-      Can be extended to allow arguments with default value.
+      <td>Explicitly distinguishes the prefix case (no dummy parameter) from the postfix case (an extra parameter of
+      type <code class="highlight"><c- b>int</c-></code>). Could be extended to allow further parameters with default arguments.
    </table>
    <p>The following overloadable operators have dedicated sections elsewhere in the draft.</p>
    <table>
@@ -2308,16 +2315,17 @@ Currently they are explicitely distinguished by the number of arguments in their
       <td><code class="highlight"><c- k>operator</c-> <c- k>co_await</c-></code><br>
       Unary <a href="https://eel.is/c++draft/expr.await">[expr.await]</a>
       <td>
-       The only place I found, which talks about about number of arguments in overlaoded operator is this one:
-      
+       The only place found that discusses the number of parameters on an overloaded <code class="highlight"><c- k>operator</c-> <c- k>co_await</c-></code> is:
+
 
        <p><cite>"o is determined by enumerating the applicable operator co_await functions for an argument a ([over.match.oper]),
       and choosing the best one through overload resolution ([over.match]). If overload resolution is ambiguous,
       the program is ill-formed. If no viable functions are found, o is a. Otherwise, o is a call to the selected
       function with the argument a. If o would be a prvalue, the temporary materialization conversion ([conv.rval]) is applied."</cite></p>
-       <p>This wording does not explicitely restricts the number of arguments in overloaded operator,
-      just how it will be used for overload resolution with one argument.</p>
-       <p>That said, quick check with GCC and Clang (<a href="https://godbolt.org/z/r5vMToj3K">godbolt</a>) shows both restricting it to one argument.</p>
+       <p>This wording does not explicitly restrict the parameter count of the overloaded operator; it only describes how the
+      single operand <code class="highlight"><c- n>a</c-></code> participates in overload resolution.</p>
+       <p>A quick check with GCC and Clang (<a href="https://godbolt.org/z/r5vMToj3K">Compiler Explorer</a>) shows both compilers
+      rejecting extra parameters on <code class="highlight"><c- k>operator</c-> <c- k>co_await</c-></code> today.</p>
    </table>
    <p>Some frightening operators, which do not have specific sections for overloaded operators:</p>
    <table>
@@ -2328,40 +2336,39 @@ Currently they are explicitely distinguished by the number of arguments in their
     <tbody>
      <tr>
       <td><code class="highlight"><c- k>operator</c-><c- p>,</c-></code>
-      <td>Comma operator <a href="https://eel.is/c++draft/expr.comma">[expr.comma]</a> does not introduce dedicated rules,
-      which would affect the argument list of overloaded operator.
+      <td>The comma operator in <a href="https://eel.is/c++draft/expr.comma">[expr.comma]</a> does not introduce dedicated
+      rules that would constrain the parameter list of an overloaded <code class="highlight"><c- k>operator</c-><c- p>,</c-></code>.
      <tr>
       <td>Indirection <code class="highlight"><c- k>operator</c-><c- o>*</c-></code> and address-of <code class="highlight"><c- k>operator</c-><c- o>&amp;</c-></code>
-      <td>Defined in Unary operators section <a href="https://eel.is/c++draft/expr.unary.op">[expr.unary.op]</a> with rules
-      that does not seem to affect the behavior of default arguments, if introduced.
+      <td>Defined in the unary operators clause <a href="https://eel.is/c++draft/expr.unary.op">[expr.unary.op]</a>; those
+      rules do not appear to constrain defaulted trailing parameters if they were introduced.
      <tr>
       <td>Comparisons
       <td>
-       Defined in Three-way comparison operator section <a href="https://eel.is/c++draft/expr.spaceship">[expr.spaceship]</a> and
-      Relational operators section <a href="https://eel.is/c++draft/expr.rel">[expr.rel]</a>
-      with rules, as well as Three-way comparison section <a href="https://eel.is/c++draft/class.spaceship">[class.spaceship]</a>,
-      which introduces <cite>synthesized three-way comparison</cite>.
-      
+       Described in <a href="https://eel.is/c++draft/expr.spaceship">[expr.spaceship]</a> (three-way comparison operator),
+      <a href="https://eel.is/c++draft/expr.rel">[expr.rel]</a> (relational operators), and <a href="https://eel.is/c++draft/class.spaceship">[class.spaceship]</a> (including <cite>synthesized three-way comparison</cite>).
 
-       <p>None of these section seem to interfer with possible default arguments in
-      underlying comparison operators and should not affect the current proposal.</p>
+
+       <p>None of these sections appear to interfere with defaulted trailing parameters on the underlying comparison operators,
+      and they should not block the current proposal.</p>
    </table>
-   <h2 class="heading settled" data-level="7" id="wording_summary"><span class="secno">7. </span><span class="content">Wording summary</span><a class="self-link" href="#wording_summary"></a></h2>
+   <h2 class="heading settled" data-level="6" id="wording"><span class="secno">6. </span><span class="content">Wording</span><a class="self-link" href="#wording"></a></h2>
    <p>It looks sufficient to address 3 aspects:</p>
    <ol>
     <li data-md>
-     <p>Remove phrosing the explicitely disallows to have argument with default values for operators. Optionaly add phrasing, that operator deifnition section might be described, implying defaulted arguments present without explicitely mentioning them.</p>
+     <p>Remove phrasing the explicitely disallows to have argument with default values for operators.</p>
     <li data-md>
      <p>Modify phrasing, that Unary operato definition may imply additional arguments, if they have default values.</p>
     <li data-md>
      <p>Same for binary operators.</p>
     <li data-md>
+     <p>Additional wording will be required to allow defulat arguments for increments/decrements and class member access operators.</p>
+    <li data-md>
      <p>Optionaly, explicitely allow (or may by disallow) additional arguments for <code class="highlight"><c- k>operator</c-> <c- k>co_await</c-></code>.</p>
    </ol>
-   <h2 class="heading settled" data-level="8" id="impl"><span class="secno">8. </span><span class="content">Implementation notes</span><a class="self-link" href="#impl"></a></h2>
-   <p>Draft implementations to follow, given <em>R0</em> revision to not have strong opposition.</p>
-   <h2 class="heading settled" data-level="9" id="wording"><span class="secno">9. </span><span class="content">Wording</span><a class="self-link" href="#wording"></a></h2>
    <p>No formal drafting is included in <strong>R0</strong>.</p>
+   <h2 class="heading settled" data-level="7" id="impl"><span class="secno">7. </span><span class="content">Implementation notes</span><a class="self-link" href="#impl"></a></h2>
+   <p>Draft implementations will follow once R0 shows there is no strong opposition to the proposed direction.</p>
   </main>
 <script>
 (function() {

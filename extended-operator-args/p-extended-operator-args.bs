@@ -11,17 +11,21 @@ Markup Shorthands: markdown yes
 Abstract: This paper proposes allowing user-defined operator functions to declare additional trailing parameters with
 Abstract: default arguments (beyond the fixed number of operands today), evaluated at the call site—mirroring the existing
 Abstract: exception for `operator()`. The motivating use case is passing `std::source_location` into operators so
-Abstract: implementations and diagnostics can record where `a @ b` was written without macros or non-operator wrappers.
+Abstract: implementations and diagnostics can record where `a @ b` was written without non-operator wrappers.
 </pre>
 
 Introduction {#intro}
 ============
 
 Many libraries implement smart reference types, units, matrices, or logging proxies where user-defined operators (`+`,
-`==`, subscripting, etc.) are the natural surface syntax. Authors often want **call-site provenance**: file, line, and
-column where the operator expression appeared. C++20 provides <a
-href="https://wg21.link/source.location.syn">`std::source_location`</a> for that purpose on ordinary functions, but
-**operator invocations** cannot today carry a trailing `std::source_location` parameter in a portable way while
+`==`, subscripting, etc.) are the natural surface syntax. Such interfaces are primarily used, where operations are
+heavily used across the source code, thus using named functions would result in excessive verbosty in reduction
+of code readability. Within such use cases code monitoring and additional debugging capabilities are essential.
+
+Authors often want **call-site provenance**: file, line, and column where the operator expression appeared.
+
+C++20 provides <a href="https://wg21.link/source.location.syn">`std::source_location`</a> for that purpose on ordinary functions,
+but operator invocations cannot carry a trailing `std::source_location` parameter today in a portable way while
 preserving `a + b` syntax.
 
 Problem {#problem}
@@ -40,15 +44,13 @@ href="https://eel.is/c++draft/over.oper.general">[over.oper.general]</a>:
 > have more or fewer parameters than the number required for the corresponding operator, as described in the rest of
 > [over.oper].
 
-That rule—not <a href="https://eel.is/c++draft/dcl.fct.default">[dcl.fct.default]</a>, which only defines how default
-arguments behave when they are allowed—is what forbids the usual `std::source_location::current()` trailing-parameter
+That rule dissallows the usual `std::source_location::current()` trailing-parameter
 idiom on overloads such as `operator+`, aside from carve-outs spelled out “below” in <a
 href="https://eel.is/c++draft/over.oper">[over.oper]</a> (notably `operator()`).
 
 As a result, authors resort to named functions (`add(a, b)`) instead of operators (ergonomic loss).
 
-Motivating example {#example}
-==================
+Example:
 
 ```cpp
 struct quantity {
@@ -60,6 +62,11 @@ struct quantity {
 
 quantity x = a + b;
 ```
+
+Using std::source_location within the operator itself will provide the source data of the operator implementation,
+which is generally obvious and does not bring in new data (and could be workaround by good old #FILE and #LINE
+macro definitions). Thus allowing std::source_location within the default value of the argument is
+essential for the monitoring methodology to work.
 
 We may collect usage statistics, based on caller context. E.g. reporting wrap-around
 cases, as potential for usage error. But it is almost useless, unless we have data about the context
@@ -75,8 +82,8 @@ arguments**, subject to:
 2. Additional parameters, if any, appear **only after** the operand parameters and **all** have default arguments.
 3. Instantiate defaults in the **operator expression**, so `std::source_location::current()` captures the caller.
 
-Note: one can go further and allow any additional arguments to operators even if they are not defaulted, if one is to call them with
-`a.operator+(1,2,3)` syntax, but there is no clear use case for this wider generalization.
+Note: the language could also allow extra operator parameters without defaults, callable only through explicit
+`a.operator+(1, 2, 3)` syntax, but there is no clear use case for that broader generalization.
 
 Alternatives considered {#alternics}
 =======================
@@ -88,35 +95,38 @@ Alternatives considered {#alternics}
   <tbody>
     <tr><td>Named APIs</td><td>Loses operator notation.</td></tr>
     <tr><td>std::stacktrace</td>
-        <td>Brings in a variety of requirements such as RTTI information and is generally much heavier, than using std::source_location</td></tr>
-    <tr><td>Compiler built-in</td><td>Executing any kind of builtin within the context of the operator looses the caller context thus does not look like solution.</td></tr>
-    <tr><td>Reflection</td><td>Does not seem to solve the question of the callee context.</td></tr>
+        <td>Brings in a variety of requirements (for example RTTI) and is generally much heavier than
+        <code>std::source_location</code>, as well as reporting granularity is implementation defined,
+        thus we may not see the exact place of operator invocation.</td></tr>
+    <tr><td>Compiler built-in</td><td>Running a built-in inside the operator body loses caller-site context and does not
+        provide a satisfactory solution.</td></tr>
+    <tr><td>Reflection</td><td>Does not appear to recover caller-site context for this problem.</td></tr>
   </tbody>
 </table>
 
 Wording strategy {#wording_strategy}
 ==================
 
-There are several operator types and serveral sections of the  standard, which describe how overload resolution works
-for operators, and thus can potentially be affected by adding new arguments.
+There are several operator kinds and several sections of the standard that describe how overload resolution works for
+operators; those places could be affected by adding new parameters.
 
-General section <a href="https://eel.is/c++draft/over.oper.general">[over.oper.general]</a> for overloaded operators.
+The general section for overloaded operators is <a href="https://eel.is/c++draft/over.oper.general">[over.oper.general]</a>.
 
-The key wording, which forbidds default arguments:
+The key wording that forbids default arguments is:
 
 <cite>"An operator function cannot have default arguments, except where explicitly stated below. Operator functions cannot
 have more or fewer parameters than the number required for the corresponding operator, as described in the rest of [over.oper]."</cite>
 
-Further description is split into several sub-sections and the most generic are: Unary operators
-<a href="https://eel.is/c++draft/over.unary">[over.unary]</a> and Binary opertors
+Further rules are split across subclauses; the most general are unary operators
+<a href="https://eel.is/c++draft/over.unary">[over.unary]</a> and binary operators
 <a href="https://eel.is/c++draft/over.binary.general">[over.binary.general]</a>.
-Currently they are explicitely distinguished by the number of arguments in their member and non-member versions.
+Today they are distinguished explicitly by the number of parameters in their member and non-member forms.
 
-When type of the operator is determined, it is further reffered to the Operators in expressions section
-<a href="https://eel.is/c++draft/over.match.oper">[over.match.oper]</a>, which has several aspects:
+Once the operator’s kind is fixed, resolution is described under <a href="https://eel.is/c++draft/over.match.oper">[over.match.oper]</a>,
+which has several parts:
 
-- the algorithm of populating of the candidate lists - should not be affected by proposed change;
-- the algorithm of choosing between the candidates is reffered to general function rules [over.match.viable] and [over.match.best] - should not be affected by proposed change.
+- the algorithm for populating the candidate sets should not be affected by the proposed change;
+- choosing among candidates defers to the usual function rules (<a href="https://eel.is/c++draft/over.match.viable">[over.match.viable]</a>, <a href="https://eel.is/c++draft/over.match.best">[over.match.best]</a>) and should likewise be unaffected.
 
 This is followed by a set of dedicated sections:
 
@@ -131,32 +141,32 @@ This is followed by a set of dedicated sections:
     <tr>
       <td>Unary operators<br />
       <a href="https://eel.is/c++draft/over.unary">[over.unary]</a></td>
-      <td>Introduces definition:<br />
+      <td>Introduces the definition:<br />
       "either a non-static member function ([class.mfct]) with no non-object parameters or a non-member function with one parameter."<br /><br />
-      Distinguishing between unary and binary operators, where both are possible:<br /> + - * &</td>
+      Distinguishing unary and binary forms where both exist, for example <code>+</code>, <code>-</code>, <code>*</code>,
+      and <code>&amp;</code>.</td>
     </tr>
     <tr>
       <td>General binary operators<br />
       <a href="https://eel.is/c++draft/over.binary.general">[over.binary.general]</a></td>
-      <td>Introduces definition:<br />
-      "either a non-static member function ([class.mfct]) with one non-object parameter or a non-member function with two parameters"<br />
-      same</td>
+      <td>Introduces the definition:<br />
+      "either a non-static member function ([class.mfct]) with one non-object parameter or a non-member function with two parameters."</td>
     </tr>
     <tr>
       <td>Simple assignment<br />
       <a href="https://eel.is/c++draft/over.assign">[over.assign]</a></td>
-      <td>Reffers to previous section (General binary operators) for describing the argument list and their behavior.</td>
+      <td>Refers to the previous section (general binary operators) for the parameter list and its behavior.</td>
     </tr>
     <tr>
       <td>Function call operator<br />
       <a href="https://eel.is/c++draft/over.call">[over.call]</a></td>
-      <td>Is already explicitely allowed to have default arguments:<br />
+      <td>Is already explicitly allowed to have default arguments:<br />
       <cite>"with an arbitrary number of parameters. It may have default arguments."</cite></td>
     </tr>
     <tr>
       <td>Subscripting operator<br />
       <a href="https://eel.is/c++draft/over.sub">[over.sub]</a></td>
-      <td>Is already explicitely allowed to have default arguments:<br />
+      <td>Is already explicitly allowed to have default arguments:<br />
       <cite>"with an arbitrary number of parameters. It may have default arguments."</cite>
       </td>
     </tr>
@@ -168,8 +178,8 @@ This is followed by a set of dedicated sections:
     <tr>
       <td>Increment and decrement<br />
       <a href="https://eel.is/c++draft/over.inc">[over.inc]</a></td>
-      <td>Explicitely distinguishes cases with no non-object arguments and non-object arguments with additional argument of type int.
-      Can be extended to allow arguments with default value.</td>
+      <td>Explicitly distinguishes the prefix case (no dummy parameter) from the postfix case (an extra parameter of
+      type <code>int</code>). Could be extended to allow further parameters with default arguments.</td>
     </tr>
   </tbody>
 </table>
@@ -199,18 +209,18 @@ The following overloadable operators have dedicated sections elsewhere in the dr
     <tr>
       <td><code>operator co_await</code><br />
       Unary <a href="https://eel.is/c++draft/expr.await">[expr.await]</a></td>
-      <td>The only place I found, which talks about about number of arguments in overlaoded operator is this one:
-      
+      <td>The only place found that discusses the number of parameters on an overloaded <code>operator co_await</code> is:
+
       <cite>"o is determined by enumerating the applicable operator co_await functions for an argument a ([over.match.oper]),
       and choosing the best one through overload resolution ([over.match]). If overload resolution is ambiguous,
       the program is ill-formed. If no viable functions are found, o is a. Otherwise, o is a call to the selected
       function with the argument a. If o would be a prvalue, the temporary materialization conversion ([conv.rval]) is applied."</cite>
 
-      This wording does not explicitely restricts the number of arguments in overloaded operator,
-      just how it will be used for overload resolution with one argument.
+      This wording does not explicitly restrict the parameter count of the overloaded operator; it only describes how the
+      single operand <code>a</code> participates in overload resolution.
 
-      That said, quick check with GCC and Clang (<a href="https://godbolt.org/z/r5vMToj3K">godbolt</a>) shows both restricting it to one argument.
-      </td>
+      A quick check with GCC and Clang (<a href="https://godbolt.org/z/r5vMToj3K">Compiler Explorer</a>) shows both compilers
+      rejecting extra parameters on <code>operator co_await</code> today.</td>
     </tr>
   </tbody>
 </table>
@@ -227,44 +237,39 @@ Some frightening operators, which do not have specific sections for overloaded o
   <tbody>
     <tr>
       <td><code>operator,</code></td>
-      <td>Comma operator <a href="https://eel.is/c++draft/expr.comma">[expr.comma]</a> does not introduce dedicated rules,
-      which would affect the argument list of overloaded operator.</td>
+      <td>The comma operator in <a href="https://eel.is/c++draft/expr.comma">[expr.comma]</a> does not introduce dedicated
+      rules that would constrain the parameter list of an overloaded <code>operator,</code>.</td>
     </tr>
     <tr>
       <td>Indirection <code>operator*</code> and address-of <code>operator&amp;</code></td>
-      <td>Defined in Unary operators section <a href="https://eel.is/c++draft/expr.unary.op">[expr.unary.op]</a> with rules
-      that does not seem to affect the behavior of default arguments, if introduced.</td>
+      <td>Defined in the unary operators clause <a href="https://eel.is/c++draft/expr.unary.op">[expr.unary.op]</a>; those
+      rules do not appear to constrain defaulted trailing parameters if they were introduced.</td>
     </tr>
     <tr>
       <td>Comparisons</td>
-      <td>Defined in Three-way comparison operator section <a href="https://eel.is/c++draft/expr.spaceship">[expr.spaceship]</a> and
-      Relational operators section <a href="https://eel.is/c++draft/expr.rel">[expr.rel]</a>
-      with rules, as well as Three-way comparison section <a href="https://eel.is/c++draft/class.spaceship">[class.spaceship]</a>,
-      which introduces <cite>synthesized three-way comparison</cite>.
-      
-      None of these section seem to interfer with possible default arguments in
-      underlying comparison operators and should not affect the current proposal.</td>
+      <td>Described in <a href="https://eel.is/c++draft/expr.spaceship">[expr.spaceship]</a> (three-way comparison operator),
+      <a href="https://eel.is/c++draft/expr.rel">[expr.rel]</a> (relational operators), and <a
+      href="https://eel.is/c++draft/class.spaceship">[class.spaceship]</a> (including <cite>synthesized three-way comparison</cite>).
+
+      None of these sections appear to interfere with defaulted trailing parameters on the underlying comparison operators,
+      and they should not block the current proposal.</td>
     </tr>
   </tbody>
 </table>
 
-Wording summary {#wording_summary}
-=====================
+Wording {#wording}
+=======
 
 It looks sufficient to address 3 aspects:
-
 1. Remove phrasing the explicitely disallows to have argument with default values for operators.
 2. Modify phrasing, that Unary operato definition may imply additional arguments, if they have default values.
 3. Same for binary operators.
-4. Optionaly, explicitely allow (or may by disallow) additional arguments for <code>operator co_await</code>.
+4. Additional wording will be required to allow defulat arguments for increments/decrements and class member access operators.
+5. Optionaly, explicitely allow (or may by disallow) additional arguments for <code>operator co_await</code>.
 
+No formal drafting is included in **R0**.
 
 Implementation notes {#impl}
 ======================
 
-Draft implementations to follow, given *R0* revision to not have strong opposition.
-
-Wording {#wording}
-=======
-
-No formal drafting is included in **R0**.
+Draft implementations will follow once R0 shows there is no strong opposition to the proposed direction.
