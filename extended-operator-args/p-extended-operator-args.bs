@@ -79,8 +79,9 @@ The intent of the change is to treat user-defined operators like ordinary functi
 arguments**, subject to:
 
 1. The leading parameters still satisfy the operator’s required operand pattern (unary, binary, etc.) as today.
-2. Additional parameters, if any, appear **only after** the operand parameters and **all** have default arguments.
-3. Instantiate defaults in the **operator expression**, so `std::source_location::current()` captures the caller.
+2. With the existing limitation that there should be at least one user-defined type on those first non-defaulted arguments.
+3. Additional parameters, if any, appear **only after** the operand parameters and **all** have default arguments.
+4. Instantiate defaults in the **operator expression**, so `std::source_location::current()` captures the caller.
 
 Note: the language could also allow extra operator parameters without defaults, callable only through explicit
 `a.operator+(1, 2, 3)` syntax, but there is no clear use case for that broader generalization.
